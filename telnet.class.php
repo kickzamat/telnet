@@ -15,9 +15,14 @@
             $socket = NULL,
 
             $socketTimeout = array('sec' => 3, 'usec' => 0),
+    
+            $readBufferSize = 1,
 
-            $globalOut;
+            $globalOut,
+        
+            $socketWriteDelay = 50000; // us
 
+    
     public function __construct($host = NULL, $login = NULL, $passwd = NULL, $port = 23) {
 
       if (!$host || !$login || !$passwd) throw new Exception("Input param is empty", 1);      
@@ -32,6 +37,12 @@
 
 
       $this->specSym = array(
+        
+        'NULL' => chr(0),
+        
+        'CR' => chr(13),  
+        
+        'DC1' => chr(13),
 
         'IAC' => chr(255),
 
@@ -82,19 +93,21 @@
 
 
     private function readChar() {
-
+    
       $out = socket_read($this->socket, 1);
-
+      
       $this->globalOut .= $out;
-
-      return $out;
-
-    } // func
-
-
+      
+      return $out;    
+    
+    }
+    
+    
     private function negotinate() {
 
       $out = $this->readChar();
+      
+      $msg = '';
 
       if ($out == $this->specSym['IAC']) {
 
@@ -106,39 +119,61 @@
       if (($out == $this->specSym['DO']) || ($out == $this->specSym['DONT'])) {
 
           $opt = $this->readChar();
+        
+          $msg = $this->specSym['IAC'] . $this->specSym['WONT'] . $opt;
 
-          if (!socket_write($this->socket, $this->specSym['IAC'] . $this->specSym['WONT'] . $opt)) {
+          $this->globalOut .= "\nSending: #$msg#\n";
+        
+          if (!socket_write($this->socket, $msg)) {
 
             throw new Exception(" # Error socket_write()", 1);
             
-          }
-
+          } // if
+        
+          usleep($this->socketWriteDelay);
+        
       } else if (($out == $this->specSym['WILL']) || ($out == $this->specSym['WONT'])) {
 
           $opt = $this->readChar();
+        
+          $msg = $this->specSym['IAC'] . $this->specSym['DONT'] . $opt;
+        
+          $this->globalOut .= "\nSending: #$msg#\n";
 
-          if (!socket_write($this->socket, $this->specSym['IAC'] . $this->specSym['DONT'] . $opt)) {
+          if (!socket_write($this->socket, $msg)) {
 
             throw new Exception(" # Error socket_write()", 1);
 
-          }
+          } // if 
+        
+          usleep($this->socketWriteDelay);
 
       } else {
 
         throw new Exception(" # Error Unknown negotinaion string", 1);
       
       } // else
+      
+      return $out;
 
     } // func
 
 
     private function socketRead() {
-
-      while ($out = $this->readChar()) {
-
-      if ($out == $this->specSym['IAC']) $this->negotinate();
-
-        printf("$out\n");
+      
+      while (1) {
+          
+        $out = $this->readChar();
+          
+        if ($out === $this->specSym['NULL'] || $out === FALSE) break;
+        
+        printf("$out");
+        
+        if ($out == $this->specSym['IAC']) {
+          
+          $out = $this->negotinate();    
+          
+        } // if
 
       } // while
 
